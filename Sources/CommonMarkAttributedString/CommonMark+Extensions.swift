@@ -6,10 +6,14 @@ import struct CoreGraphics.CGFloat
 #if canImport(UIKit)
 import class UIKit.UIFont
 import class UIKit.NSTextAttachment
+import class UIKit.NSParagraphStyle
+import class UIKit.NSMutableParagraphStyle
 #elseif canImport(AppKit)
 import class AppKit.NSFont
 import class AppKit.NSTextAttachment
 import class AppKit.NSTextList
+import class AppKit.NSParagraphStyle
+import class AppKit.NSMutableParagraphStyle
 #endif
 
 // MARK: -
@@ -31,15 +35,13 @@ extension Node: AttributedStringConvertible {
             return NSAttributedString(string: literal.literal ?? "", attributes: attributes)
         case let container as ContainerOfBlocks:
             guard !container.children.contains(where: { $0 is HTMLBlock }) else {
-                let html = try Document(container.description).render(format: .html)
-                return try NSAttributedString(html: html, attributes: attributes) ?? NSAttributedString()
+                return NSAttributedString(string: container.description, attributes: attributes)
             }
 
             return try container.children.map { try $0.attributedString(attributes: attributes, attachments: attachments) }.joined(separator: "\u{2029}")
         case let container as ContainerOfInlineElements:
             guard !container.children.contains(where: { $0 is RawHTML }) else {
-                let html = try Document(container.description).render(format: .html)
-                return try NSAttributedString(html: html, attributes: attributes) ?? NSAttributedString()
+                return NSAttributedString(string: container.description, attributes: attributes)
             }
 
             return try container.children.map { try $0.attributedString(attributes: attributes, attachments: attachments) }.joined()
@@ -102,6 +104,13 @@ extension Heading {
     override func attributes(with attributes: [NSAttributedString.Key: Any]) -> [NSAttributedString.Key: Any] {
         var attributes = attributes
 
+        let paragraphStyle = attributes[.paragraphStyle] as? NSParagraphStyle ?? NSParagraphStyle.default
+        let mutableParagraphStyle = NSMutableParagraphStyle()
+        mutableParagraphStyle.setParagraphStyle(paragraphStyle)
+        mutableParagraphStyle.minimumLineHeight *= fontSizeMultiplier
+        mutableParagraphStyle.maximumLineHeight *= fontSizeMultiplier
+        attributes[.paragraphStyle] = mutableParagraphStyle
+        
         #if canImport(UIKit)
         let font = attributes[.font] as? UIFont ?? UIFont.preferredFont(forTextStyle: .body)
         attributes[.font] = UIFont(descriptor: font.fontDescriptor, size: font.pointSize * fontSizeMultiplier).addingSymbolicTraits(.traitBold)
@@ -149,7 +158,7 @@ extension List.Item {
         }
         #endif
 
-        let indentation = String(repeating: "\t", count: list.nestingLevel)
+        let indentation = String(repeating: "\t", count: max(0, list.nestingLevel - 1))
 
         let mutableAttributedString = NSMutableAttributedString(string: indentation + delimiter + " ", attributes: attributes)
         mutableAttributedString.append(try children.map { try $0.attributedString(attributes: attributes, attachments: attachments) }.joined(separator: "\u{2029}"))
